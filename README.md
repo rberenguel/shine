@@ -17,26 +17,26 @@ Shine guides you through distilling a complex technical concept into a self-cont
 
 ### Option 1: Global skill directory
 ```bash
-ln -s /Users/ruben/code/shine ~/.pi/agent/skills/shine
+ln -s <path-to-shine> ~/.pi/agent/skills/shine
 ```
 
 ### Option 2: Per-project
 ```bash
 mkdir -p .pi/skills
-ln -s /Users/ruben/code/shine .pi/skills/shine
+ln -s <path-to-shine> .pi/skills/shine
 ```
 
 ### Option 3: Settings
 Add to your `~/.pi/settings.json`:
 ```json
 {
-  "skills": ["/Users/ruben/code/shine"]
+  "skills": ["<path-to-shine>"]
 }
 ```
 
 ### Option 4: CLI flag
 ```bash
-pi --skill /Users/ruben/code/shine
+pi --skill <path-to-shine>
 ```
 
 ## Usage
