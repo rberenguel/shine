@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Gradient Descent Finds Minima</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --article-width: 740px;
+  --body-font: 'Source Serif 4', Georgia, serif;
+  --heading-font: 'Source Sans 3', system-ui, sans-serif;
+  --mono-font: 'Source Code Pro', monospace;
+  --body-size: 1.125rem;
+  --line-height: 1.6;
+  --text: #1a1a2e;
+  --text-2: #4a4a6a;
+  --accent: #2563eb;
+  --accent-light: #dbeafe;
+  --bg: #fafafa;
+  --fig-bg: #ffffff;
+  --border: #e2e2e8;
+  --path-diverge: #dc2626;
+  --path-slow: #92400e;
+}
+
+body {
+  font-family: var(--body-font);
+  font-size: var(--body-size);
+  line-height: var(--line-height);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.article { max-width: var(--article-width); margin: 0 auto; padding: 2rem 1.25rem 6rem; }
+h1, h2, h3 { font-family: var(--heading-font); font-weight: 700; line-height: 1.2; }
+h1 { font-size: 2.5rem; margin: 0 0 0.5rem; }
+h2 { font-size: 1.5rem; margin: 3rem 0 1rem; }
+h3 { font-size: 1.15rem; margin: 2rem 0 0.75rem; }
+p { margin: 0 0 1rem; }
+a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+.figure { margin: 2rem 0; padding: 1.5rem; background: var(--fig-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.figure-wide { margin-left: -2rem; margin-right: -2rem; }
+.figure-caption { font-family: var(--heading-font); font-size: 0.85rem; color: var(--text-2); margin-top: 0.75rem; }
+.figure-label { font-weight: 600; color: var(--text); }
+
+.insight { background: var(--accent-light); border-left: 3px solid var(--accent); padding: 1rem 1.25rem; margin: 1.5rem 0; border-radius: 0 4px 4px 0; }
+.insight p { margin: 0; }
+
+.margin-note { font-size: 0.8125rem; color: var(--text-2); line-height: 1.4; border-left: 2px solid var(--border); padding-left: 0.75rem; margin: 1rem 0; }
+
+.controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; font-family: var(--heading-font); font-size: 0.85rem; color: var(--text-2); }
+.controls input[type="range"] { width: 160px; accent-color: var(--accent); }
+.controls button {
+  font-family: var(--heading-font); font-size: 0.85rem; padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--fig-bg);
+  cursor: pointer; color: var(--text);
+}
+.controls button:hover { border-color: var(--accent); }
+
+svg text { font-family: var(--heading-font); }
+svg .axis text { font-size: 11px; fill: var(--text-2); }
+svg .axis line, svg .axis path { stroke: var(--border); }
+
+.path-converge { stroke: var(--accent); fill: none; stroke-width: 2.5; stroke-linecap: round; }
+.path-diverge { stroke: var(--path-diverge); fill: none; stroke-width: 2.5; stroke-linecap: round; }
+.path-slow { stroke: var(--path-slow); fill: none; stroke-width: 2.5; stroke-linecap: round; }
+
+.equation { margin: 1.5rem 0; text-align: center; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.75rem; }
+  .figure-wide { margin-left: 0; margin-right: 0; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { --text: #e8e6dd; --text-2: #a0a0b4; --bg: #1a1a2e;
+    --fig-bg: #22223a; --border: #3a3a52; --accent: #60a5fa; --accent-light: #1e3a5f;
+    --path-diverge: #f87171; --path-slow: #fbbf24; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
+}
+</style>
+</head>
+<body>
+<div class="article">
+  <header>
+    <h1>How Gradient Descent Finds Minima</h1>
+    <p style="font-family: var(--heading-font); font-size: 1.15rem; color: var(--text-2);">
+      A simple rule, followed repeatedly, can solve problems that look impossible.
+    </p>
+  </header>
+
+  <p>
+    Imagine standing on a hillside in thick fog. You cannot see the valley floor, but you can feel
+    the slope under your feet. If you always take a step downhill, you will eventually reach the
+    bottom. This is the entire idea behind gradient descent.
+  </p>
+
+  <p>
+    In practice, the "hill" is a loss function that measures how wrong a model's predictions are.
+    The "valley" is the set of parameters that make the model most accurate. Gradient descent tries
+    to find that valley by repeatedly adjusting parameters in the direction that reduces loss.
+  </p>
+
+  <h2>The Landscape</h2>
+
+  <p>
+    To see how this works, consider a simple loss landscape: a parabola. The horizontal axis is a
+    single parameter. The vertical axis is the loss. The minimum sits at the bottom of the curve.
+  </p>
+
+  <div id="fig-landscape" role="img" aria-label="Interactive loss landscape showing gradient descent paths with different learning rates."></div>
+  <p class="figure-caption"><span class="figure-label">Figure 1.</span> Three paths down the same parabola. The blue path uses a moderate learning rate and converges smoothly. The red path overshoots and diverges. The amber path crawls toward the minimum.</p>
+
+  <p>
+    The figure above shows three attempts to find the minimum, starting from the same point on the
+    left. Each attempt uses a different step size, called the <strong>learning rate</strong>. The
+    learning rate is the only thing that changes, yet the outcomes are completely different.
+  </p>
+
+  <h2>Step Size Matters</h2>
+
+  <p>
+    The gradient tells you which direction is downhill, but not how far to step. A step that is too
+    large can overshoot the minimum and climb the opposite slope. A step that is too small takes
+    forever to arrive. The right step size depends on the steepness of the landscape.
+  </p>
+
+  <div id="fig-slider" role="img" aria-label="Interactive figure with a slider controlling learning rate to show convergence behavior."></div>
+  <p class="figure-caption"><span class="figure-label">Figure 2.</span> Drag the slider to change the learning rate. Watch how the convergence path stretches, overshoots, or shrinks. The default value of 0.3 finds the minimum in a few steps.</p>
+
+  <p>
+    On a steep slope, even a moderate step size can overshoot. On a gentle slope, the same step
+    size might barely move. This is why adaptive methods like Adam adjust the step size based on
+    the history of gradients.
+  </p>
+
+  <h2>The Rule, Repeated</h2>
+
+  <p>
+    Gradient descent is not clever. It does not plan ahead or remember past attempts. At each step,
+    it looks at the local slope and moves downhill. The hope is that the global minimum is
+    reachable through a sequence of locally downhill steps.
+  </p>
+
+  <div class="insight">
+    <p><strong>The update rule:</strong></p>
+    <div class="equation" id="eq-update"></div>
+  </div>
+
+  <p>
+    For our parabola, the gradient is simply twice the horizontal distance from the origin. When
+    the learning rate is 0.5, the algorithm jumps directly to the minimum in one step. When it is
+    smaller, the path spirals inward. When it is larger than 1.0, the path explodes outward.
+  </p>
+
+  <h2>What This Means in Practice</h2>
+
+  <p>
+    Real loss landscapes are not smooth parabolas. They have ridges, plateaus, and multiple local
+    minima. Gradient descent can get stuck in shallow valleys or oscillate across narrow canyons.
+    Yet the same simple rule, with modest extensions like momentum and adaptive rates, underpins
+    nearly all modern machine learning.
+  </p>
+
+  <p>
+    The power of gradient descent is not that it is sophisticated, but that it is robust enough to
+    work in spaces with billions of dimensions where no human could reason about the landscape
+    directly.
+  </p>
+
+  <footer style="margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border); font-family: var(--heading-font); font-size: 0.85rem; color: var(--text-2);">
+    <p>Built with shine.</p>
+  </footer>
+</div>
+
+<!-- === REUSABLE TEMPLATE: parameter-slider.js === -->
+<script>
+/**
+ * Parameter Slider Figure Template
+ * @param {string} selector - CSS selector for the container div
+ * @param {Object} options - { param, min, max, step, label, render }
+ * @param {Function} options.render - callback(svg, width, height, value)
+ */
+function createSliderFigure(selector, options) {
+  const { param = 0.5, min = 0, max = 1, step = 0.01, label = 'Parameter', render } = options;
+  const container = d3.select(selector);
+  const figure = container.append('div').attr('class', 'figure');
+  const controls = figure.append('div').attr('class', 'controls');
+  controls.append('label').style('font-weight', '600').style('color', 'var(--text)').text(label + ':');
+  const slider = controls.append('input').attr('type', 'range').attr('min', min).attr('max', max).attr('step', step).attr('value', param);
+  const valSpan = controls.append('span').style('font-family', 'var(--mono-font)').style('min-width', '4ch').text(param.toFixed(2));
+  const btn = controls.append('button').text('Replay');
+
+  const wrapper = figure.append('div').style('width', '100%').style('overflow', 'hidden');
+  const margin = { top: 10, right: 20, bottom: 40, left: 50 };
+  let width = wrapper.node().clientWidth - margin.left - margin.right;
+  let height = 300 - margin.top - margin.bottom;
+
+  const svg = wrapper.append('svg')
+    .attr('width', width + margin.left + margin.right)
+    .attr('height', height + margin.top + margin.bottom)
+    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // X and Y scales for the parabola
+  const xScale = d3.scaleLinear().domain([-4, 4]);
+  const yScale = d3.scaleLinear().domain([0, 16]).range([height, 0]);
+
+  function descentPath(lr, steps, x0) {
+    const pts = [{ x: x0, y: x0 * x0 }];
+    let x = x0;
+    for (let i = 0; i < steps; i++) {
+      x = x - lr * 2 * x;
+      pts.push({ x, y: x * x });
+    }
+    return pts;
+  }
+
+  function drawAxes() {
+    xScale.range([0, width]);
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${height})`)
+      .call(d3.axisBottom(xScale).ticks(5));
+    svg.append('g').attr('class', 'axis')
+      .call(d3.axisLeft(yScale).ticks(5));
+    const curve = d3.line().x(d => xScale(d.x)).y(d => yScale(d.y)).curve(d3.curveBasis);
+    const curveData = d3.range(-4, 4.05, 0.05).map(x => ({ x, y: x * x }));
+    svg.append('path').datum(curveData).attr('d', curve).attr('fill', 'none').attr('stroke', 'var(--border)').attr('stroke-width', 2);
+  }
+
+  let currentPath = null;
+  let currentDots = null;
+
+  function renderFigure(lr) {
+    svg.selectAll('*').remove();
+    drawAxes();
+    const pts = descentPath(lr, 20, -3.5);
+    const line = d3.line().x(d => xScale(d.x)).y(d => yScale(d.y));
+    const isDiverge = lr > 1.0;
+    const color = isDiverge ? 'var(--path-diverge)' : 'var(--accent)';
+
+    currentPath = svg.append('path').datum(pts).attr('d', line)
+      .attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2.5).attr('stroke-linecap', 'round');
+
+    const len = currentPath.node().getTotalLength();
+    currentPath.attr('stroke-dasharray', len).attr('stroke-dashoffset', len)
+      .transition().duration(isDiverge ? 1500 : 2000).ease(d3.easeCubicOut)
+      .attr('stroke-dashoffset', 0);
+
+    currentDots = svg.selectAll(null).data([pts[0], pts[pts.length - 1]])
+      .join('circle')
+      .attr('cx', d => xScale(d.x)).attr('cy', d => yScale(d.y))
+      .attr('r', 0).attr('fill', color)
+      .transition().delay(200).duration(400).attr('r', 4);
+  }
+
+  renderFigure(param);
+
+  slider.on('input', function() {
+    const v = +this.value;
+    valSpan.text(v.toFixed(2));
+    renderFigure(v);
+  });
+
+  btn.on('click', () => renderFigure(+slider.node().value));
+
+  const ro = new ResizeObserver(([entry]) => {
+    const w = entry.contentRect.width;
+    if (w > 0 && Math.abs(w - (width + margin.left + margin.right)) > 4) {
+      width = w - margin.left - margin.right;
+      wrapper.select('svg').attr('width', width + margin.left + margin.right);
+      renderFigure(+slider.node().value);
+    }
+  });
+  ro.observe(wrapper.node());
+}
+</script>
+
+<!-- === ARTICLE FIGURES === -->
+<script>
+// === Figure 1: Three fixed paths with ResizeObserver ===
+(function() {
+  const container = d3.select('#fig-landscape').append('div').attr('class', 'figure');
+  const wrapper = container.append('div').style('width', '100%').style('overflow', 'hidden');
+  const margin = { top: 10, right: 20, bottom: 40, left: 50 };
+  let width = wrapper.node().clientWidth - margin.left - margin.right;
+  let height = 300 - margin.top - margin.bottom;
+
+  const svg = wrapper.append('svg')
+    .attr('width', width + margin.left + margin.right)
+    .attr('height', height + margin.top + margin.bottom);
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const xScale = d3.scaleLinear();
+  const yScale = d3.scaleLinear().domain([0, 16]).range([height, 0]);
+
+  function descentPath(lr, steps, x0) {
+    const pts = [{ x: x0, y: x0 * x0 }];
+    let x = x0;
+    for (let i = 0; i < steps; i++) {
+      x = x - lr * 2 * x;
+      pts.push({ x, y: x * x });
+    }
+    return pts;
+  }
+
+  function render() {
+    g.selectAll('*').remove();
+    xScale.domain([-4, 4]).range([0, width]);
+
+    const curve = d3.line().x(d => xScale(d.x)).y(d => yScale(d.y)).curve(d3.curveBasis);
+    const curveData = d3.range(-4, 4.05, 0.05).map(x => ({ x, y: x * x }));
+    g.append('path').datum(curveData).attr('d', curve).attr('fill', 'none').attr('stroke', 'var(--border)').attr('stroke-width', 2);
+
+    g.append('g').attr('class', 'axis').attr('transform', `translate(0,${height})`).call(d3.axisBottom(xScale).ticks(5));
+    g.append('g').attr('class', 'axis').call(d3.axisLeft(yScale).ticks(5));
+
+    function drawPath(pts, cls, delay) {
+      const line = d3.line().x(d => xScale(d.x)).y(d => yScale(d.y));
+      const path = g.append('path').datum(pts).attr('d', line).attr('class', cls);
+      const len = path.node().getTotalLength();
+      path.attr('stroke-dasharray', len).attr('stroke-dashoffset', len)
+        .transition().delay(delay).duration(2000).ease(d3.easeCubicOut)
+        .attr('stroke-dashoffset', 0);
+
+      g.selectAll(null).data(pts.slice(0, 1).concat(pts.slice(-1)))
+        .join('circle')
+        .attr('cx', d => xScale(d.x)).attr('cy', d => yScale(d.y))
+        .attr('r', 0).attr('fill', 'var(--text)')
+        .transition().delay(delay + 200).duration(400)
+        .attr('r', 4);
+    }
+
+    drawPath(descentPath(0.3, 12, -3), 'path-slow', 0);
+    drawPath(descentPath(0.85, 12, -3), 'path-converge', 800);
+    drawPath(descentPath(1.05, 8, -3), 'path-diverge', 1600);
+  }
+
+  render();
+
+  const ro = new ResizeObserver(([entry]) => {
+    const w = entry.contentRect.width;
+    if (w > 0 && Math.abs(w - (width + margin.left + margin.right)) > 4) {
+      width = w - margin.left - margin.right;
+      svg.attr('width', width + margin.left + margin.right);
+      render();
+    }
+  });
+  ro.observe(wrapper.node());
+})();
+
+// === Figure 2: Interactive slider using the reusable template ===
+createSliderFigure('#fig-slider', {
+  param: 0.3, min: 0, max: 1.2, step: 0.01,
+  label: 'Learning rate'
+});
+
+// === KaTeX equation ===
+katex.render("x_{t+1} = x_t - \\eta \\nabla f(x_t)", document.getElementById('eq-update'), {
+  throwOnError: false, displayMode: true
+});
+</script>
+</body>
+</html>
